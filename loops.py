@@ -1,0 +1,182 @@
+import asyncio
+import configparser
+
+import discord
+from discord.ext import tasks, commands
+from slack_sdk import WebClient
+from substrateinterface import SubstrateInterface
+
+import db
+
+c = configparser.ConfigParser()
+c.read("config.ini", encoding='utf-8')
+discord_token = str(c["DISCORD"]["token"])
+slack_token = str(c["SLACK"]["token"])
+discord_monitoring_channel = int(c["DISCORD"]["monitoring_channel"])
+slack_monitoring_channel = str(c["SLACK"]["monitoring_channel"])
+intents = discord.Intents.all()
+intents.messages = True
+
+prefix = 'avail'
+bot = commands.Bot(command_prefix=prefix, intents=intents)
+slack_client = WebClient(token=slack_token)
+
+@bot.event
+async def on_ready():
+    print(f'Logged in as {bot.user} (ID: {bot.user.id})')
+    print('-----------------')
+    print("ready")
+    await stream_blocks.start()
+
+@tasks.loop(minutes=5)
+async def stream_blocks():
+
+    substrate = SubstrateInterface(url="wss://turing-rpc.avail.so/ws", use_remote_preset=True,
+                                   type_registry_preset='substrate-node-template')
+    notification_channel = bot.get_channel(discord_monitoring_channel)
+
+    chain_head_hash = substrate.get_chain_finalised_head()
+    chain_head_num = substrate.get_block_number(block_hash=chain_head_hash)
+    last_saved_block = db.get_last_saved_block()
+    block_range = [299897, 300610, 301323, 302039, 302748, 303460, 304178, 304894, 305614, 306331, 307046, 307762, 308475, 309193]
+    block_num = db.get_last_saved_block()
+    while (block_num+730) < chain_head_num:
+        for i in range(650, 731):
+            block_num = db.get_last_saved_block()
+            block_num += i
+
+            if block_num % 100 == 0:
+                print(f"Fetched block #{block_num}")
+            try:
+                block = substrate.get_block(block_number=block_num)
+                block_hash = block['header']['hash']
+
+                # Fetch block events
+                events = substrate.get_events(block_hash=block_hash)
+            except Exception as e:
+                # print(block_num, e)
+                events = []
+                block_hash = ""
+
+            for event in events:
+                try:
+                    # Decode the event
+                    event_data = event['event'].value
+                    module_id = event_data['module_id']
+                    event_id = event_data['event_id']
+                    if module_id == 'staking':
+                        print(f"Staking block #{block_num}")
+
+                    # If we just started a new session
+                    if module_id == 'Session' and event_id == 'NewSession':
+                        print(f"Session block #{block_num}")
+
+                        # Get the set of validators in the active set
+                        active_validators_temp = list(substrate.query(
+                            module='Session',
+                            storage_function='Validators',
+                            block_hash=block_hash
+                        ))
+                        active_validators = [str(v) for v in active_validators_temp]
+                        #TODO: This part
+                        db.update_active_validators(active_validators)
+
+                        # Get the session number and offline validators. This will require looping through the events again
+                        session_num = 0
+                        offline_validators = []
+                        for e in events:
+                            e_data = e['event'].value
+                            m_id = e_data['module_id']
+                            e_id = e_data['event_id']
+                            if m_id == 'Session' and e_id == 'NewSession':
+                                session_num = int(e_data["attributes"]["session_index"])
+
+                        for e in events:
+                            e_data = e['event'].value
+                            m_id = e_data['module_id']
+                            e_id = e_data['event_id']
+                            if m_id == 'ImOnline' and e_id == 'AllGood':
+                                notification_text=f"No downtime reported in session {session_num-1}."
+                                await notification_channel.send(notification_text)
+                                slack_client.chat_postMessage(channel=slack_monitoring_channel, text=notification_text)
+                                for val_stash in active_validators:
+                                    val_id = db.get_validator_id_num(val_stash)
+                                    validator_offline_count = db.get_validator_offline_count(val_id, session_num)
+                                    if validator_offline_count is None:
+                                        address_id = db.get_validator_identity(val_stash)
+                                        if address_id == 'null':
+                                            notification_text=f"**{val_stash}** is now in the active set."
+                                        else:
+                                            notification_text=f"**{address_id}** ({val_stash}) is now in the active set."
+                                        await notification_channel.send(notification_text)
+                                        slack_client.chat_postMessage(channel=slack_monitoring_channel, text=notification_text)
+                                    elif validator_offline_count > 0:
+                                        address_id = db.get_validator_identity(val_stash)
+                                        if address_id == 'null':
+                                            notification_text = f"{val_stash} is back online."
+                                        else:
+                                            notification_text = f"{address_id} ({val_stash}) is back online."
+                                        await notification_channel.send(notification_text)
+                                        slack_client.chat_postMessage(channel=slack_monitoring_channel,text=notification_text)
+                            # We are looking for when validators are noted as offline
+                            if m_id == 'ImOnline' and e_id == 'SomeOffline':
+                                notification_text = f"**Session Complete**: {session_num-1}"
+                                await notification_channel.send(notification_text)
+                                slack_client.chat_postMessage(channel=slack_monitoring_channel, text=notification_text)
+                                for offline_val in e_data['attributes']['offline']:
+                                    val_stash = offline_val[0]
+                                    address_id = db.get_validator_identity(val_stash)
+                                    print(db.get_validator_id_num(val_stash))
+                                    if val_stash in active_validators:
+                                        offline_validators.append(val_stash)
+                                        active_validators.remove(val_stash)
+                                        val_id = db.get_validator_id_num(val_stash)
+                                        validator_offline_count = db.get_validator_offline_count(val_id, session_num)
+                                        if address_id == 'null':
+                                            notification_text = f"**{val_stash}** has been offline for {validator_offline_count + 1} sessions."
+                                        else:
+                                            notification_text = f"**{address_id}** ({val_stash}) has been offline for {validator_offline_count + 1} sessions."
+                                        await notification_channel.send(notification_text)
+                                        slack_client.chat_postMessage(channel=slack_monitoring_channel,
+                                                                      text=notification_text)
+
+                                for val_stash in active_validators:
+                                    val_id = db.get_validator_id_num(val_stash)
+                                    validator_offline_count = db.get_validator_offline_count(val_id, session_num)
+                                    if validator_offline_count is None:
+                                        address_id = db.get_validator_identity(val_stash)
+                                        if address_id == 'null':
+                                            notification_text = f"**{val_stash}** is now in the active set."
+                                        else:
+                                            notification_text = f"**{address_id}** ({val_stash}) is now in the active set."
+                                        await notification_channel.send(notification_text)
+                                        slack_client.chat_postMessage(channel=slack_monitoring_channel, text=notification_text)
+                                    elif validator_offline_count > 0:
+                                        address_id = db.get_validator_identity(val_stash)
+                                        if address_id == 'null':
+                                            notification_text = f"**{val_stash}** is back online."
+                                        else:
+                                            notification_text = f"**{address_id}** ({val_stash}) is back online."
+                                        await notification_channel.send(notification_text)
+                                        slack_client.chat_postMessage(channel=slack_monitoring_channel,
+                                                                      text=notification_text)
+
+                        db.set_validator_offline_data(session_num, block_num, active_validators, offline_validators)
+
+                        inactive_validators = db.get_validators_removed_from_active_set(session_num)
+                        for val_id in inactive_validators:
+                            val_stash = db.get_validator_address(val_id)
+                            address_id = db.get_validator_identity(val_stash)
+                            if address_id == 'null':
+                                notification_text = f"**{val_stash}** is no longer in the active set."
+                            else:
+                                notification_text = f"**{address_id}** ({val_stash}) is no longer in the active set."
+                            await notification_channel.send(notification_text)
+                            slack_client.chat_postMessage(channel=slack_monitoring_channel, text=notification_text)
+
+                        break
+
+                except Exception as e:
+                    print(f"Error processing event: {e}")
+
+bot.run(discord_token)
