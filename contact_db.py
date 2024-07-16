@@ -1,11 +1,14 @@
+import db
+
 network = "turing"
-def get_val_contacts_from_address(db_connection, val_addr: str):
-    conn = db_connection
+def get_val_contacts_from_address(val_addr: str):
+    conn = db.connection()
     cur = conn.cursor()
     command = f"SELECT Contact FROM ValidatorContacts WHERE ValidatorAddress = '{val_addr}';"
     try:
         cur.execute(command)
         result = cur.fetchall()
+        conn.close()
         contact_list = []
         # TODO Verify this works
         for contact in result:

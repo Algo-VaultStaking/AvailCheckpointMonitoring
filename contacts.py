@@ -4,7 +4,7 @@ import re
 
 import discord
 from discord import app_commands
-from discord.ext import commands, tasks
+from discord.ext import commands
 from substrateinterface import SubstrateInterface
 
 import contact_db
@@ -41,12 +41,11 @@ async def version(ctx):
 async def contacts(interaction: discord.Interaction, validator_address: str):
     db_connection = db.connection()
     validator_name = db.get_validator_identity(validator_address)
-    contacts = contact_db.get_val_contacts_from_address(db_connection, validator_address)
-    # TODO: Make sure this isn't validator_name != ""
-    if validator_name is not None:
+    contacts = contact_db.get_val_contacts_from_address(validator_address)
+    if validator_name != 'null':
         message = f"{validator_name} has the following contacts: {', '.join(contacts)}"
     else:
-        message = f"{validator_address} has the following contacts: {', '.join(contacts)}"
+        message = f"{validator_address[:8]}...{validator_address[-8:]} has the following contacts: {', '.join(contacts)}"
     await interaction.response.send_message(message)
     db_connection.close()
 
@@ -55,20 +54,19 @@ async def contacts(interaction: discord.Interaction, validator_address: str):
 @app_commands.describe(validator_address="The validator address", user="The user to be alerted")
 async def contacts_add(interaction: discord.Interaction, validator_address: str, user: str):
     db_connection = db.connection()
-    # TODO: verify the user is a discord user
-    if user == re.compile("^<@[0-9]*>$"):
+    # verify the user is a discord user
+    if not re.compile("^<@[0-9]*>$").match(user):
         await interaction.response.send_message("User is not in a correct format. Please tag a discord user.")
         return
 
     contact_db.add_val_contact_for_address(db_connection, validator_address, user)
 
     validator_name = db.get_validator_identity(validator_address)
-    contacts = contact_db.get_val_contacts_from_address(db_connection, validator_address)
-    # TODO: Make sure this isn't validator_name != ""
-    if validator_name is not None:
+    contacts = contact_db.get_val_contacts_from_address(validator_address)
+    if validator_name != 'null':
         message = f"{validator_name} has the following contacts: {', '.join(contacts)}"
     else:
-        message = f"{validator_address} has the following contacts: {', '.join(contacts)}"
+        message = f"{validator_address[:8]}...{validator_address[-8:]} has the following contacts: {', '.join(contacts)}"
 
     await interaction.response.send_message(message)
     db_connection.close()
@@ -79,20 +77,15 @@ async def contacts_add(interaction: discord.Interaction, validator_address: str,
 @app_commands.describe(validator_address="The validator address.", user="The user to be removed.")
 async def contacts_remove(interaction: discord.Interaction, validator_address: str, user: str):
     db_connection = db.connection()
-    # TODO: verify the user is a discord user
-    if user == re.compile("^<@[0-9]*>$"):
-        await interaction.response.send_message("User is not in a correct format. Please tag a discord user.")
-        return
 
     contact_db.remove_val_contact_for_address(db_connection, validator_address, user)
 
     validator_name = db.get_validator_identity(validator_address)
-    contacts = contact_db.get_val_contacts_from_address(db_connection, validator_address)
-    # TODO: Make sure this isn't validator_name != ""
-    if validator_name is not None:
-        message = f"{validator_name} has the following contacts: {contacts}"
+    contacts = contact_db.get_val_contacts_from_address(validator_address)
+    if validator_name != 'null':
+        message = f"{validator_name} has the following contacts: {', '.join(contacts)}"
     else:
-        message = f"{validator_address} has the following contacts: {contacts}"
+        message = f"{validator_address[:8]}...{validator_address[-8:]} has the following contacts: {', '.join(contacts)}"
 
     await interaction.response.send_message(message)
     db_connection.close()

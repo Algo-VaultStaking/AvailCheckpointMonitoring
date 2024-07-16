@@ -158,7 +158,6 @@ def get_last_saved_block():
     cur = conn.cursor()
     cur.execute(f"SELECT MAX(BlockNumber) FROM ValidatorMonitoring;")
     last_saved_block = int(cur.fetchone()[0])
-    conn.close()
     return last_saved_block
 
 
