@@ -1,4 +1,3 @@
-import asyncio
 import configparser
 
 import discord
@@ -13,8 +12,10 @@ c = configparser.ConfigParser()
 c.read("config.ini", encoding='utf-8')
 discord_token = str(c["DISCORD"]["token"])
 slack_token = str(c["SLACK"]["token"])
-discord_monitoring_channel = int(c["DISCORD"]["monitoring_channel"])
+discord_turing_monitoring_channel = int(c["DISCORD"]["turing_monitoring_channel"])
 slack_monitoring_channel = str(c["SLACK"]["monitoring_channel"])
+turing_rpc = str(c["GENERAL"]["turing_rpc"])
+network = "Turing"
 intents = discord.Intents.all()
 intents.messages = True
 
@@ -31,16 +32,17 @@ async def on_ready():
 
 @tasks.loop(minutes=5)
 async def stream_blocks():
-    substrate = SubstrateInterface(url="wss://turing-rpc.avail.so/ws", use_remote_preset=True,
+    substrate = SubstrateInterface(url=turing_rpc, use_remote_preset=True,
                                    type_registry_preset='substrate-node-template')
-    notification_channel = bot.get_channel(discord_monitoring_channel)
+    notification_channel = bot.get_channel(discord_turing_monitoring_channel)
 
     chain_head_hash = substrate.get_chain_finalised_head()
     chain_head_num = substrate.get_block_number(block_hash=chain_head_hash)
-    block_num = db.get_last_saved_block()
+    block_num = db.get_last_saved_block(network)
     while (block_num+730) < chain_head_num:
-        for i in range(650, 731):
-            block_num = db.get_last_saved_block()
+        for i in range(10000):
+        #for i in range(650, 731):
+            block_num = db.get_last_saved_block(network)
             block_num += i
 
             if block_num % 100 == 0:
@@ -52,7 +54,7 @@ async def stream_blocks():
                 # Fetch block events
                 events = substrate.get_events(block_hash=block_hash)
             except Exception as e:
-                # print(block_num, e)
+                print(block_num, e)
                 events = []
                 block_hash = ""
 
@@ -77,7 +79,7 @@ async def stream_blocks():
                         ))
                         active_validators = [str(v) for v in active_validators_temp]
                         #TODO: This part
-                        db.update_active_validators(active_validators)
+                        db.update_active_validators(active_validators, network)
 
                         # Get the session number and offline validators. This will require looping through the events again
                         session_num = 0
@@ -98,13 +100,13 @@ async def stream_blocks():
                                 await notification_channel.send(notification_text)
                                 slack_client.chat_postMessage(channel=slack_monitoring_channel, text=notification_text)
                                 for val_stash in active_validators:
-                                    val_id = db.get_validator_id_num(val_stash)
-                                    validator_offline_count = db.get_validator_offline_count(val_id, session_num)
+                                    val_id = db.get_validator_id_num(val_stash, network)
+                                    validator_offline_count = db.get_validator_offline_count(val_id, session_num, network)
                                     if validator_offline_count is None:
-                                        address_id = db.get_validator_identity(val_stash)
+                                        address_id = db.get_validator_identity(val_stash, network)
                                         await send_socials_message(address_id, val_stash, contact_db.get_val_contacts_from_address(val_stash), "active")
                                     elif validator_offline_count > 0:
-                                        address_id = db.get_validator_identity(val_stash)
+                                        address_id = db.get_validator_identity(val_stash, network)
                                         await send_socials_message(address_id, val_stash, contact_db.get_val_contacts_from_address(val_stash), "online")
                             # We are looking for when validators are noted as offline
                             if m_id == 'ImOnline' and e_id == 'SomeOffline':
@@ -113,33 +115,33 @@ async def stream_blocks():
                                 # slack_client.chat_postMessage(channel=slack_monitoring_channel, text=notification_text)
                                 for offline_val in e_data['attributes']['offline']:
                                     val_stash = offline_val[0]
-                                    address_id = db.get_validator_identity(val_stash)
-                                    print(db.get_validator_id_num(val_stash))
+                                    address_id = db.get_validator_identity(val_stash, network)
+                                    print(db.get_validator_id_num(val_stash, network))
                                     if val_stash in active_validators:
                                         offline_validators.append(val_stash)
                                         active_validators.remove(val_stash)
-                                        val_id = db.get_validator_id_num(val_stash)
-                                        validator_offline_count = db.get_validator_offline_count(val_id, session_num)
+                                        val_id = db.get_validator_id_num(val_stash, network)
+                                        validator_offline_count = db.get_validator_offline_count(val_id, session_num, network)
                                         await send_socials_message(address_id, val_stash,
                                                                    contact_db.get_val_contacts_from_address(val_stash),
                                                                    "offline", validator_offline_count + 1)
 
                                 for val_stash in active_validators:
-                                    val_id = db.get_validator_id_num(val_stash)
-                                    validator_offline_count = db.get_validator_offline_count(val_id, session_num)
+                                    val_id = db.get_validator_id_num(val_stash, network)
+                                    validator_offline_count = db.get_validator_offline_count(val_id, session_num, network)
                                     if validator_offline_count is None:
-                                        address_id = db.get_validator_identity(val_stash)
+                                        address_id = db.get_validator_identity(val_stash, network)
                                         await send_socials_message(address_id, val_stash, contact_db.get_val_contacts_from_address(val_stash), "active")
                                     elif validator_offline_count > 0:
-                                        address_id = db.get_validator_identity(val_stash)
+                                        address_id = db.get_validator_identity(val_stash, network)
                                         await send_socials_message(address_id, val_stash, contact_db.get_val_contacts_from_address(val_stash), "online")
 
-                        db.set_validator_offline_data(session_num, block_num, active_validators, offline_validators)
+                        db.set_validator_offline_data(session_num, block_num, active_validators, offline_validators, network)
 
-                        inactive_validators = db.get_validators_removed_from_active_set(session_num)
+                        inactive_validators = db.get_validators_removed_from_active_set(session_num, network)
                         for val_id in inactive_validators:
-                            val_stash = db.get_validator_address(val_id)
-                            address_id = db.get_validator_identity(val_stash)
+                            val_stash = db.get_validator_address(val_id, network)
+                            address_id = db.get_validator_identity(val_stash, network)
                             await send_socials_message(address_id, val_stash, contact_db.get_val_contacts_from_address(val_stash), "not active")
                         break
 
@@ -148,7 +150,7 @@ async def stream_blocks():
 
 
 async def send_socials_message(identity: str, address: str, contacts: list, message, offline_count=0):
-    notification_channel = bot.get_channel(discord_monitoring_channel)
+    notification_channel = bot.get_channel(discord_turing_monitoring_channel)
     match message:
         case "active":
             if identity == 'null':

@@ -14,6 +14,9 @@ DB_HOST = str(c["DATABASE"]["host"])
 DB_NAME = str(c["DATABASE"]["name"])
 PAGERDUTY_TOKEN = str(c["GENERAL"]["pagerduty_token"])
 
+mainnet_rpc = str(c["GENERAL"]["mainnet_rpc"])
+turing_rpc = str(c["GENERAL"]["turing_rpc"])
+
 
 # Connect to MariaDB Platform
 def connection():
@@ -49,18 +52,22 @@ def initial_setup():
         print(f"Error: {e}")
 
 
-def update_active_validators(active_val_list: list):
+def update_active_validators(active_val_list: list, network: str):
     # TODO: Update on-chain identity
     conn = connection()
     cur = conn.cursor()
-    substrate = SubstrateInterface(url="wss://turing-rpc.avail.so/ws", use_remote_preset=True,
+    if network == 'Turing':
+        substrate = SubstrateInterface(url=turing_rpc, use_remote_preset=True,
                                    type_registry_preset='substrate-node-template')
+    else:
+        substrate = SubstrateInterface(url=mainnet_rpc, use_remote_preset=True,
+                                       type_registry_preset='substrate-node-template')
 
     i=0
     for validator_addr in active_val_list:
         i+=1
         cur.execute(f"SELECT ID "
-                    f"FROM ValidatorInfo "
+                    f"FROM {network}ValidatorInfo "
                     f"WHERE ValidatorAddress = '{validator_addr}';")
 
         val_db_id = cur.fetchone()
@@ -68,7 +75,7 @@ def update_active_validators(active_val_list: list):
         if val_db_id is None:
             # Get the last database ID
             cur.execute(f"SELECT max(ID) "
-                        f"FROM ValidatorInfo;")
+                        f"FROM {network}ValidatorInfo;")
             next_id = int(cur.fetchone()[0])+1
 
             # Get the validator's on-chain ID
@@ -83,32 +90,33 @@ def update_active_validators(active_val_list: list):
             print(address_id)
 
             # Add validator to ValidatorInfo
-            cur.execute(f"INSERT INTO ValidatorInfo "
-                        f"VALUES({next_id}, '{validator_addr}', \"{address_id}\", 'turing');")
+            cur.execute(f"INSERT INTO {network}ValidatorInfo "
+                        f"VALUES({next_id}, '{validator_addr}', \"{address_id}\", '{network}');")
 
             # Create a new row with the next incremented ID
-            cur.execute(f"ALTER TABLE ValidatorMonitoring \
-                           ADD COLUMN val_{next_id} INT;")
+            cur.execute(f"ALTER TABLE Validator{network}Monitoring ADD COLUMN val_{next_id} INT;")
             conn.commit()
     conn.close()
 
 
-def set_validator_offline_data(session_num: int, block_num: int, active_validators: list, offline_validators: list):
+def set_validator_offline_data(session_num: int, block_num: int, active_validators: list, offline_validators: list, network: str):
     conn = connection()
     cur = conn.cursor()
 
     val_dict = {}
     for val in active_validators:
-        val_id = get_validator_id_num(val)
+        val_id = get_validator_id_num(val, network)
         val_dict[val_id] = 0
     for val in offline_validators:
-        val_id = get_validator_id_num(val)
-        val_missed_sessions = get_validator_offline_count(val_id, session_num) + 1
+        val_id = get_validator_id_num(val, network)
+        val_missed_sessions = get_validator_offline_count(val_id, session_num, network) + 1
         val_dict[val_id] = val_missed_sessions
 
     dict_keys = ", ".join(list(val_dict.keys()))
     dict_values = ", ".join(str(x) for x in list(val_dict.values()))
-    command = f"INSERT INTO ValidatorMonitoring (SessionNumber, BlockNumber, {dict_keys}) VALUES ({session_num}, {block_num}, {dict_values});"
+
+    command = f"INSERT INTO Validator{network}Monitoring (SessionNumber, BlockNumber, {dict_keys}) VALUES ({session_num}, {block_num}, {dict_values});"
+
 
     print(command)
     cur.execute(command)
@@ -117,64 +125,64 @@ def set_validator_offline_data(session_num: int, block_num: int, active_validato
     return val_dict
 
 
-def get_validator_offline_count(val_id: str, session_num: int):
+def get_validator_offline_count(val_id: str, session_num: int, network: str):
     conn = connection()
     cur = conn.cursor()
-    cur.execute(f"SELECT {val_id} FROM ValidatorMonitoring WHERE SessionNumber = {session_num - 1};")
+    cur.execute(f"SELECT {val_id} FROM Validator{network}Monitoring WHERE SessionNumber = {session_num - 1};")
     val_missed_sessions = cur.fetchone()[0]
     conn.close()
     return val_missed_sessions
 
 
-def get_validator_id_num(val_stash: str):
+def get_validator_id_num(val_stash: str, network: str):
     conn = connection()
     cur = conn.cursor()
-    cur.execute(f"SELECT ID FROM ValidatorInfo WHERE ValidatorAddress = '{val_stash}'")
+    cur.execute(f"SELECT ID FROM {network}ValidatorInfo WHERE ValidatorAddress = '{val_stash}'")
     val_id = f"val_{str(cur.fetchone()[0])}"
     conn.close()
     return val_id
 
 
-def get_validator_identity(val_stash: str):
+def get_validator_identity(val_stash: str, network: str):
     conn = connection()
     cur = conn.cursor()
-    cur.execute(f"SELECT ValidatorID FROM ValidatorInfo WHERE ValidatorAddress = '{val_stash}'")
+    cur.execute(f"SELECT ValidatorID FROM {network}ValidatorInfo WHERE ValidatorAddress = '{val_stash}'")
     val_identity = str(cur.fetchone()[0])
     conn.close()
     return val_identity
 
 
-def get_validator_address(val_id: str):
+def get_validator_address(val_id: str, network: str):
     conn = connection()
     cur = conn.cursor()
-    cur.execute(f"SELECT ValidatorAddress FROM ValidatorInfo WHERE ID = '{val_id[4:]}'")
+    cur.execute(f"SELECT ValidatorAddress FROM {network}ValidatorInfo WHERE ID = '{val_id[4:]}'")
     val_identity = str(cur.fetchone()[0])
     conn.close()
     return val_identity
 
 
-def get_last_saved_block():
+def get_last_saved_block(network: str):
     conn = connection()
     cur = conn.cursor()
-    cur.execute(f"SELECT MAX(BlockNumber) FROM ValidatorMonitoring;")
+    cur.execute(f"SELECT MAX(BlockNumber) FROM Validator{network}Monitoring;")
     last_saved_block = int(cur.fetchone()[0])
     return last_saved_block
 
 
-def get_validators_removed_from_active_set(latest_session: int):
+def get_validators_removed_from_active_set(latest_session: int, network: str):
     # https://chatgpt.com/share/0d712ea0-4e30-48c2-8bdd-859bd3cb8b18
     conn = connection()
     cursor = conn.cursor()
 
     # Fetch column names
-    cursor.execute("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'ValidatorMonitoring'")
+    cursor.execute(f"SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'Validator{network}Monitoring'")
     columns = [col[0] for col in cursor.fetchall()]
 
     # Fetch the rows with ID 1 and ID 2
-    cursor.execute(f"SELECT * FROM ValidatorMonitoring WHERE SessionNumber = {latest_session-1}")
+    cursor.execute(f"SELECT * FROM Validator{network}Monitoring WHERE SessionNumber = {latest_session-1}")
     row_id1 = cursor.fetchone()
 
-    cursor.execute(f"SELECT * FROM ValidatorMonitoring WHERE SessionNumber = {latest_session}")
+    cursor.execute(f"SELECT * FROM Validator{network}Monitoring WHERE SessionNumber = {latest_session}")
     row_id2 = cursor.fetchone()
 
     # Close the connection
