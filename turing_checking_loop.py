@@ -40,8 +40,7 @@ async def stream_blocks():
     chain_head_num = substrate.get_block_number(block_hash=chain_head_hash)
     block_num = db.get_last_saved_block(network)
     while (block_num+730) < chain_head_num:
-        for i in range(10000):
-        #for i in range(650, 731):
+        for i in range(650, 731):
             block_num = db.get_last_saved_block(network)
             block_num += i
 
@@ -53,8 +52,8 @@ async def stream_blocks():
 
                 # Fetch block events
                 events = substrate.get_events(block_hash=block_hash)
-            except Exception as e:
-                print(block_num, e)
+            except:
+                # print(block_num, e)
                 events = []
                 block_hash = ""
 
