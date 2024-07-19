@@ -13,7 +13,8 @@ import db
 c = configparser.ConfigParser()
 c.read("config.ini", encoding='utf-8')
 token = str(c["DISCORD"]["token"])
-MISSED_CHECKPOINTS_CHANNEL = int(c["DISCORD"]["monitoring_channel"])
+discord_mainnet_monitoring_channel = int(c["DISCORD"]["mainnet_monitoring_channel"])
+discord_turing_monitoring_channel = int(c["DISCORD"]["turing_monitoring_channel"])
 intents = discord.Intents.all()
 intents.messages = True
 
@@ -40,7 +41,10 @@ async def version(ctx):
 @app_commands.describe(validator_address="The validator address.")
 async def contacts(interaction: discord.Interaction, validator_address: str):
     db_connection = db.connection()
-    validator_name = db.get_validator_identity(validator_address)
+    if interaction.channel_id == discord_turing_monitoring_channel:
+        validator_name = db.get_validator_identity(validator_address, "Turing")
+    else:
+        validator_name = db.get_validator_identity(validator_address, "Mainnet")
     contacts = contact_db.get_val_contacts_from_address(validator_address)
     if validator_name != 'null':
         message = f"{validator_name} has the following contacts: {', '.join(contacts)}"
@@ -61,7 +65,10 @@ async def contacts_add(interaction: discord.Interaction, validator_address: str,
 
     contact_db.add_val_contact_for_address(db_connection, validator_address, user)
 
-    validator_name = db.get_validator_identity(validator_address)
+    if interaction.channel_id == discord_turing_monitoring_channel:
+        validator_name = db.get_validator_identity(validator_address, "Turing")
+    else:
+        validator_name = db.get_validator_identity(validator_address, "Mainnet")
     contacts = contact_db.get_val_contacts_from_address(validator_address)
     if validator_name != 'null':
         message = f"{validator_name} has the following contacts: {', '.join(contacts)}"
@@ -80,7 +87,10 @@ async def contacts_remove(interaction: discord.Interaction, validator_address: s
 
     contact_db.remove_val_contact_for_address(db_connection, validator_address, user)
 
-    validator_name = db.get_validator_identity(validator_address)
+    if interaction.channel_id == discord_turing_monitoring_channel:
+        validator_name = db.get_validator_identity(validator_address, "Turing")
+    else:
+        validator_name = db.get_validator_identity(validator_address, "Mainnet")
     contacts = contact_db.get_val_contacts_from_address(validator_address)
     if validator_name != 'null':
         message = f"{validator_name} has the following contacts: {', '.join(contacts)}"
