@@ -13,7 +13,7 @@ c.read("config.ini", encoding='utf-8')
 discord_token = str(c["DISCORD"]["token"])
 slack_token = str(c["SLACK"]["token"])
 discord_turing_monitoring_channel = int(c["DISCORD"]["turing_monitoring_channel"])
-slack_monitoring_channel = str(c["SLACK"]["monitoring_channel"])
+slack_monitoring_channel = str(c["SLACK"]["turing_monitoring_channel"])
 turing_rpc = str(c["GENERAL"]["turing_rpc"])
 network = "Turing"
 intents = discord.Intents.all()
@@ -40,7 +40,7 @@ async def stream_blocks():
     chain_head_num = substrate.get_block_number(block_hash=chain_head_hash)
     block_num = db.get_last_saved_block(network)
     while (block_num+730) < chain_head_num:
-        for i in range(650, 731):
+        for i in range(650, 741):
             block_num = db.get_last_saved_block(network)
             block_num += i
 
@@ -111,7 +111,7 @@ async def stream_blocks():
                             if m_id == 'ImOnline' and e_id == 'SomeOffline':
                                 notification_text = f"**Session Complete**: {session_num-1}"
                                 await notification_channel.send(notification_text)
-                                # slack_client.chat_postMessage(channel=slack_monitoring_channel, text=notification_text)
+                                slack_client.chat_postMessage(channel=slack_monitoring_channel, text=notification_text)
                                 for offline_val in e_data['attributes']['offline']:
                                     val_stash = offline_val[0]
                                     address_id = db.get_validator_identity(val_stash, network)
