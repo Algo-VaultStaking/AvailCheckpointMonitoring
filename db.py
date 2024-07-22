@@ -147,7 +147,11 @@ def get_validator_identity(val_stash: str, network: str):
     conn = connection()
     cur = conn.cursor()
     cur.execute(f"SELECT ValidatorID FROM {network}ValidatorInfo WHERE ValidatorAddress = '{val_stash}'")
-    val_identity = str(cur.fetchone()[0])
+    try:
+        val_identity = str(cur.fetchone()[0])
+    except Exception as e:
+        print(e)
+        val_identity = 'null'
     conn.close()
     return val_identity
 
