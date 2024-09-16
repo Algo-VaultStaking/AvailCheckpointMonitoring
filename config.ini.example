@@ -1,0 +1,24 @@
+[GENERAL]
+pagerduty_token =
+mainnet_rpc =
+turing_rpc =
+
+[DISCORD]
+token =
+#Avail
+mainnet_monitoring_channel =
+turing_monitoring_channel =
+error_channel =
+
+[SLACK]
+token =
+mainnet_monitoring_channel =
+turing_monitoring_channel =
+
+[DATABASE]
+user = admin
+password =
+host = ...rds.amazonaws.com
+name =
+
+

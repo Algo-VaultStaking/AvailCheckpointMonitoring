@@ -38,11 +38,12 @@ async def stream_blocks():
 
     chain_head_hash = substrate.get_chain_finalised_head()
     chain_head_num = substrate.get_block_number(block_hash=chain_head_hash)
-    block_num = db.get_last_saved_block(network)
-    while (block_num+730) < chain_head_num:
-        for i in range(700, 731):
-            block_num = db.get_last_saved_block(network)
+    block_num = db.get_last_saved_era_block(network)
+    while (block_num+4320) < chain_head_num:
+        for i in range(4310, 4325):
+            block_num = db.get_last_saved_era_block(network)
             block_num += i
+            print(block_num)
 
             if block_num % 100 == 0:
                 print(f"Fetched block #{block_num}")
@@ -78,7 +79,7 @@ async def stream_blocks():
                         ))
                         active_validators = [str(v) for v in active_validators_temp]
                         #TODO: This part
-                        db.update_active_validators(active_validators, network)
+                        # db.update_active_validators(active_validators, network)
 
                         # Get the session number and offline validators. This will require looping through the events again
                         session_num = 0
@@ -94,6 +95,18 @@ async def stream_blocks():
                             e_data = e['event'].value
                             m_id = e_data['module_id']
                             e_id = e_data['event_id']
+
+                            if m_id == 'Staking' and e_id == 'EraPaid':
+                                print("end of an era")
+                                era = e_data['attributes']['era_index']
+                                validatorPayout = str(e_data['attributes']['validator_payout'])[:-18]
+                                val_set_count = len(active_validators)
+
+                                db.set_era_data(era, block_num, val_set_count, validatorPayout, network)
+                                notification_text = (f"Era {era} complete!\n"
+                                                     f"   Total blocks: {db.get_blocks_in_era(era, network)}")
+                                slack_client.chat_postMessage(channel=slack_monitoring_channel, text=notification_text)
+
                             if m_id == 'ImOnline' and e_id == 'AllGood':
                                 notification_text=f"No downtime reported in session {session_num-1}."
                                 await notification_channel.send(notification_text)
