@@ -1,6 +1,7 @@
 import configparser
 import http.client
 import json
+import re
 
 import mariadb
 from substrateinterface import SubstrateInterface
@@ -87,7 +88,7 @@ def update_active_validators(active_val_list: list, network: str):
 
             address_id = 'null' if identity_info.value is None else str(identity_info.value[0]["info"]["display"]["Raw"])
             # address_id = re.sub('[^\w\s]+', '', address_id)
-            print(address_id)
+            print("address id: ", address_id)
 
             # Add validator to ValidatorInfo
             cur.execute(f"INSERT INTO {network}ValidatorInfo "
@@ -150,7 +151,7 @@ def get_validator_identity(val_stash: str, network: str):
     try:
         val_identity = str(cur.fetchone()[0])
     except Exception as e:
-        print(e)
+        print(f"get validator identity error: {e}")
         val_identity = 'null'
     conn.close()
     return val_identity
@@ -171,6 +172,22 @@ def get_last_saved_block(network: str):
     cur.execute(f"SELECT MAX(BlockNumber) FROM Validator{network}Monitoring;")
     last_saved_block = int(cur.fetchone()[0])
     return last_saved_block
+
+
+def get_last_saved_era_block(network: str):
+    conn = connection()
+    cur = conn.cursor()
+    cur.execute(f"SELECT MAX(BlockNumber) FROM Validator{network}Eras;")
+    last_saved_block = int(cur.fetchone()[0])
+    return last_saved_block
+
+
+def get_blocks_in_era(era: int, network: str):
+    conn = connection()
+    cur = conn.cursor()
+    cur.execute(f"SELECT NumberOfBlocks FROM Validator{network}Eras WHERE EraNumber = {era};")
+    num_of_blocks = int(cur.fetchone()[0])
+    return num_of_blocks
 
 
 def get_validators_removed_from_active_set(latest_session: int, network: str):
@@ -200,6 +217,23 @@ def get_validators_removed_from_active_set(latest_session: int, network: str):
             columns_with_null_id2_non_null_id1.append(col)
 
     return columns_with_null_id2_non_null_id1
+
+
+def set_era_data(era_num: int, block_num: int, active_validators: int, validator_payout: str, network: str):
+    conn = connection()
+    cur = conn.cursor()
+
+    cur.execute(f"SELECT BlockNumber FROM Validator{network}Eras WHERE EraNumber = {era_num-1};")
+    num_blocks = block_num-int(cur.fetchone()[0])
+
+    command = (f"INSERT INTO Validator{network}Eras (EraNumber, BlockNumber, NumberOfBlocks, NumberActiveValidators, ValidatorPayout) VALUES "
+               f"({era_num}, {block_num}, {num_blocks}, {active_validators}, {validator_payout});")
+
+    print(command)
+    cur.execute(command)
+    conn.commit()
+    conn.close()
+    return True
 
 
 def create_pagerduty_alert(validator: int, num_missed: int):
