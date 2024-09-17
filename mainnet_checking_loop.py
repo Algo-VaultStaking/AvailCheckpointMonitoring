@@ -38,10 +38,10 @@ async def stream_blocks():
 
     chain_head_hash = substrate.get_chain_finalised_head()
     chain_head_num = substrate.get_block_number(block_hash=chain_head_hash)
-    block_num = db.get_last_saved_era_block(network)
-    while (block_num+4320) < chain_head_num:
-        for i in range(4310, 4325):
-            block_num = db.get_last_saved_era_block(network)
+    block_num = db.get_last_saved_block(network)
+    while (block_num+725) < chain_head_num:
+        for i in range(700, 725):
+            block_num = db.get_last_saved_block(network)
             block_num += i
             print(block_num)
 
