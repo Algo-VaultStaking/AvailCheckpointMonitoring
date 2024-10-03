@@ -40,7 +40,7 @@ async def stream_blocks():
     chain_head_num = substrate.get_block_number(block_hash=chain_head_hash)
     block_num = db.get_last_saved_block(network)
     while (block_num+725) < chain_head_num:
-        for i in range(700, 725):
+        for i in range(710, 725):
             block_num = db.get_last_saved_block(network)
             block_num += i
             print(block_num)
@@ -79,7 +79,7 @@ async def stream_blocks():
                         ))
                         active_validators = [str(v) for v in active_validators_temp]
                         #TODO: This part
-                        # db.update_active_validators(active_validators, network)
+                        db.update_active_validators(active_validators, network)
 
                         # Get the session number and offline validators. This will require looping through the events again
                         session_num = 0
@@ -110,7 +110,7 @@ async def stream_blocks():
                             if m_id == 'ImOnline' and e_id == 'AllGood':
                                 notification_text=f"No downtime reported in session {session_num-1}."
                                 await notification_channel.send(notification_text)
-                                slack_client.chat_postMessage(channel=slack_monitoring_channel, text=notification_text)
+                                # slack_client.chat_postMessage(channel=slack_monitoring_channel, text=notification_text)
                                 for val_stash in active_validators:
                                     val_id = db.get_validator_id_num(val_stash, network)
                                     validator_offline_count = db.get_validator_offline_count(val_id, session_num, network)
@@ -124,7 +124,7 @@ async def stream_blocks():
                             if m_id == 'ImOnline' and e_id == 'SomeOffline':
                                 notification_text = f"**Session Complete**: {session_num-1}"
                                 await notification_channel.send(notification_text)
-                                slack_client.chat_postMessage(channel=slack_monitoring_channel, text=notification_text)
+                                #slack_client.chat_postMessage(channel=slack_monitoring_channel, text=notification_text)
                                 for offline_val in e_data['attributes']['offline']:
                                     val_stash = offline_val[0]
                                     address_id = db.get_validator_identity(val_stash, network)
@@ -188,7 +188,7 @@ async def send_socials_message(identity: str, address: str, contacts: list, mess
         case _:
             return
 
-    slack_client.chat_postMessage(channel=slack_monitoring_channel, text=notification_text)
+    # slack_client.chat_postMessage(channel=slack_monitoring_channel, text=notification_text)
 
     if len(contacts) != 0:
         notification_text += f" - " + ", ".join(contacts)
