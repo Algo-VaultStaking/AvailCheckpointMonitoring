@@ -105,7 +105,7 @@ async def stream_blocks():
                                 db.set_era_data(era, block_num, val_set_count, validatorPayout, network)
                                 notification_text = (f"Era {era} complete!\n"
                                                      f"   Total blocks: {db.get_blocks_in_era(era, network)}")
-                                slack_client.chat_postMessage(channel=slack_monitoring_channel, text=notification_text)
+                                # slack_client.chat_postMessage(channel=slack_monitoring_channel, text=notification_text)
 
                             if m_id == 'ImOnline' and e_id == 'AllGood':
                                 notification_text=f"No downtime reported in session {session_num-1}."
@@ -159,6 +159,7 @@ async def stream_blocks():
 
                 except Exception as e:
                     print(f"Error processing event: {e}")
+                    exit()
 
 
 async def send_socials_message(identity: str, address: str, contacts: list, message, offline_count=0):
